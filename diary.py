@@ -25,6 +25,13 @@ def auto_repr(*attrs):
     return __repr__
 
 
+# https://stackoverflow.com/a/14620633
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
 # Model
 
 class Diary:
@@ -57,6 +64,13 @@ class Diary:
 
         __repr__ = auto_repr("id", "start")
 
+    class Error(Exception, enum.Enum):
+        NO_SESSION = "No current session"
+        ALREADY_STARTED = "Session already started"
+
+        def __str__(self):
+            return str(self.value)
+
     def __init__(self, session: Session):
         self._session = session
 
@@ -87,7 +101,7 @@ class Diary:
 
     def start(self, time: datetime = None):
         if self.has_current:
-            raise ValueError("Session already started")
+            raise self.Error.ALREADY_STARTED
 
         with self.session() as session:
             current = self.Current(start=time)
@@ -96,7 +110,7 @@ class Diary:
 
     def stop(self, comments: str, time: datetime = None, activity: Entry.Activity = None):
         if not self.has_current:
-            raise ValueError("No current session")
+            raise self.Error.NO_SESSION
 
         with self.session() as session:
             current = self.current
@@ -106,7 +120,7 @@ class Diary:
 
     def cancel(self):
         if not self.has_current:
-            raise ValueError("No current session")
+            raise self.Error.NO_SESSION
 
         with self.session() as session:
             session.delete(self.current)
@@ -222,21 +236,19 @@ class MarkdownEntryFormatter(EntryFormatter):
 @click.pass_context
 @click.option("--database", type=click.Path(dir_okay=False), default="diary.db")
 @click.option("--debug", default=False, is_flag=True)
-def diary(ctx, database: str, debug: bool):
-    # Connect to DB
-    engine = create_engine("sqlite:///{}".format(database), echo=debug)
-    # Init DB
-    Diary.Base.metadata.create_all(engine)
-    # Create model
-    session = Session(bind=engine)
-    diary = Diary(session)
+@click.option("-q", "--quiet", default=False, is_flag=True)
+def diary(ctx, database: str, debug: bool, quiet: bool):
+    g = ctx.obj
+    g.debug = debug
+    g.quiet = quiet
 
-    # Add to ctx
-    ctx.obj.update(
-        engine=engine,
-        session=session,
-        diary=diary
-    )
+    # Connect to DB
+    g.engine = create_engine("sqlite:///{}".format(database), echo=debug)
+    # Init DB
+    Diary.Base.metadata.create_all(g.engine)
+    # Create model
+    g.session = Session(bind=g.engine)
+    g.diary = Diary(g.session)
 
     if ctx.invoked_subcommand is None:
         ctx.invoke(show)
@@ -244,12 +256,18 @@ def diary(ctx, database: str, debug: bool):
         ctx.invoke(status)
 
 
-def with_diary(fn):
-    @click.pass_context
-    @wraps(fn)
-    def decorator(ctx, *args, **kwargs):
-        fn(ctx.obj["diary"], *args, **kwargs)
-    return decorator
+def diary_command(*args, **kwargs):
+    def decorate(fn):
+        @diary.command(*args, **kwargs)
+        @click.pass_context
+        @wraps(fn)
+        def decorator(ctx, *args, **kwargs):
+            try:
+                fn(ctx.obj, *args, **kwargs)
+            except Diary.Error as e:
+                raise click.UsageError(e)
+        return decorator
+    return decorate
 
 
 @diary.resultcallback()
@@ -266,23 +284,21 @@ formatters = {
 }
 
 
-@diary.command()
+@diary_command()
 @click.option("-f", "--format", type=click.Choice(formatters), default="markdown")
-@with_diary
-def show(diary: Diary, format: str):
+def show(g, format: str):
     formatter = formatters[format]
 
-    if diary.entries.count():
-        click.echo(formatter.format(diary.entries))
+    if g.diary.entries.count():
+        click.echo(formatter.format(g.diary.entries))
     else:
         click.echo("No entries")
 
 
-@diary.command()
-@with_diary
-def status(diary: Diary):
-    if diary.has_current:
-        start = diary.current.start
+@diary_command()
+def status(g):
+    if g.diary.has_current:
+        start = g.diary.current.start
         duration = datetime.now() - start
         start = start.strftime("%H:%M")
         duration = int(duration.total_seconds() / 60)
@@ -291,31 +307,28 @@ def status(diary: Diary):
         click.echo("No current session")
 
 
-@diary.command()
-@with_diary
-def start(diary: Diary):
-    diary.start()
+@diary_command()
+def start(g):
+    g.diary.start()
 
 
-@diary.command()
+@diary_command()
 @click.argument("comments")
-@with_diary
-def stop(diary: Diary, comments: str):
-    diary.stop(comments)
+def stop(g, comments: str):
+    g.diary.stop(comments)
 
 
-@diary.command()
-@with_diary
-def cancel(diary: Diary):
-    diary.cancel()
+@diary_command()
+@click.confirmation_option(prompt="Are you sure you want to cancel the current session?")
+def cancel(g):
+    g.diary.cancel()
 
 
-@diary.command()
-@with_diary
-def entry(diary: Diary):
+@diary_command()
+def entry(g):
     # TODO
     click.echo("TODO")
 
 
 if __name__ == "__main__":
-    diary(obj={})
+    diary(obj=AttrDict())
