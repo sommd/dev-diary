@@ -16,6 +16,8 @@ import enum
 # Utils
 
 def auto_repr(*attrs):
+    """Automatic implementation of `__repr__` from a list of attributes."""
+
     def __repr__(self):
         return "{}({})".format(
             type(self).__qualname__,
@@ -28,12 +30,16 @@ def auto_repr(*attrs):
 
 # https://stackoverflow.com/a/14620633
 class AttrDict(dict):
+    """Extension of dict that `set`/`get`/`del` as attributes."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__dict__ = self
 
 
 class DateTimeParamType(click.ParamType):
+    """Click `ParamType` for `datetime` objects. Automatically parses argument to `datetime` using `dateutil`."""
+
     name = "datetime"
 
     def convert(self, value, param, ctx):
@@ -49,12 +55,19 @@ DATE_TIME = DateTimeParamType()
 
 
 class MappedParamType(click.ParamType):
+    """Click `ParamType` for `Mapping` objects. Converts to value associated with the key entered."""
+
     def __init__(self, mapping: Mapping[str, Any]):
         self.mapping = mapping
 
+    def get_metavar(self, param):
+        return "[{}]".format("|".join(self.mapping))
+
     def convert(self, value, param, ctx):
+        # Return current value if not a str, i.e. default value
         if not isinstance(value, str):
             return value
+
         try:
             return self.mapping[value]
         except KeyError:
@@ -69,6 +82,8 @@ class Diary:
     Base = declarative_base()
 
     class Entry(Base):
+        """Table of all previous entries in diary."""
+
         class Activity(enum.Enum):
             CODING = "Coding"
             DEBUGGING = "Debugging"
@@ -84,6 +99,8 @@ class Diary:
         __repr__ = auto_repr("id", "start", "stop", "activity", "comments")
 
     class Current(Base):
+        """Table containing singleton with data on the current session, if any."""
+
         __tablename__ = "current"
         __table_args__ = (
             UniqueConstraint("id"),
@@ -107,6 +124,7 @@ class Diary:
 
     @contextmanager
     def session(self, commit=True):
+        """Helper for automatically committing/rolling back using a `with` statement."""
         try:
             yield self._session
             if commit:
@@ -131,6 +149,7 @@ class Diary:
             return session.query(self.Current).count() != 0
 
     def start(self, time: datetime = None):
+        """Start a new session with `time` as the start time, or the current time if `None`."""
         if self.has_current:
             raise self.Error.ALREADY_STARTED
 
@@ -140,6 +159,7 @@ class Diary:
             return current
 
     def stop(self, comments: str, time: datetime = None, activity: Entry.Activity = None):
+        """End the current session and record it into `entries`."""
         if not self.has_current:
             raise self.Error.NO_SESSION
 
@@ -150,6 +170,7 @@ class Diary:
             return entry
 
     def cancel(self):
+        """End the current session without recording it into `entries`."""
         if not self.has_current:
             raise self.Error.NO_SESSION
 
@@ -157,6 +178,7 @@ class Diary:
             session.delete(self.current)
 
     def add_entry(self, start: datetime, comments: str, stop: datetime = None, activity: Entry.Activity = None):
+        """Explicitly add an entry to `entries`. Works independently of the current session."""
         with self.session() as session:
             entry = self.Entry(start=start, stop=stop, activity=activity, comments=comments)
             session.add(entry)
@@ -166,6 +188,8 @@ class Diary:
 # Formatters
 
 class EntryFormatter(ABC):
+    """ABC interface for formating an `Entry` into a `str` to be output."""
+
     _default_fields = {
         "Date": lambda e: e.start.strftime("%Y-%m-%d"),
         "Start": lambda e: e.start.strftime("%H:%M"),
@@ -180,6 +204,7 @@ class EntryFormatter(ABC):
         self.fields = fields
 
     def format(self, entries: Iterable[Diary.Entry]) -> str:
+        """Output a str representation of each entry given."""
         return "{}{}{}".format(
             self.header if self.use_header else "",
             self.separator.join(self.format_entry(entry) for entry in entries),
@@ -188,27 +213,35 @@ class EntryFormatter(ABC):
 
     @property
     def header(self) -> str:
+        """Header to be prepended to output of `format`, if enabled."""
         return ""
 
     @property
     def separator(self) -> str:
+        """Separator between each entry, always enabled."""
         return "\n"
 
     @property
     def trailer(self) -> str:
+        """Trailer to be appended to output of `format`, if enabled."""
         return ""
 
     @abstractmethod
     def format_entry(self, entry: Diary.Entry) -> str:
+        """Str representation of a single entry."""
         raise NotImplementedError()
 
 
 class BasicEntryFormatter(EntryFormatter):
+    """Basic `EntryFormatter` which prints comma separated, 'field=value' pairs."""
+
     def format_entry(self, entry: Diary.Entry) -> str:
         return ", ".join("{}={}".format(name, field(entry)) for name, field in self.fields.items())
 
 
 class MarkdownEntryFormatter(EntryFormatter):
+    """`EntryFormatter` implementation which outputs as a Markdown table."""
+
     def __init__(self, *args, pretty=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.pretty = pretty
@@ -265,10 +298,17 @@ class MarkdownEntryFormatter(EntryFormatter):
 
 @click.group(invoke_without_command=True)
 @click.pass_context
-@click.option("--database", type=click.Path(dir_okay=False), default="diary.db")
+@click.option("--database", type=click.Path(dir_okay=False), default="diary.db",
+              help="The SQLite database file to use.")
 @click.option("--debug", default=False, is_flag=True)
 @click.option("-q", "--quiet", default=False, is_flag=True)
 def diary(ctx, database: str, debug: bool, quiet: bool):
+    """Keep track of development time and tasks completed.
+
+    Diary is kept track of using an SQLite database, 'diary.db' by default.
+    """
+
+    # Create g and populate with shared arguments
     g = ctx.obj
     g.debug = debug
     g.quiet = quiet
@@ -288,6 +328,7 @@ def diary(ctx, database: str, debug: bool, quiet: bool):
 
 
 def diary_command(*args, **kwargs):
+    """Decorator for creating a subcommand of `diary` and automatically injecting `g` object as first paramater."""
     def decorate(fn):
         @diary.command(*args, **kwargs)
         @click.pass_context
@@ -304,6 +345,7 @@ def diary_command(*args, **kwargs):
 @diary.resultcallback()
 @click.pass_context
 def close_database(ctx, result, *args, **kwargs):
+    """Close connection to database when done."""
     ctx.obj["session"].close()
     ctx.obj["engine"].dispose()
 
@@ -326,6 +368,7 @@ ACTIVITY = MappedParamType({
 @diary_command()
 @click.option("-f", "--format", type=FORMATTER, default="markdown")
 def show(g, format: EntryFormatter):
+    """Show entries in the diary."""
     if g.diary.entries.count():
         click.echo(format.format(g.diary.entries))
     else:
@@ -334,6 +377,7 @@ def show(g, format: EntryFormatter):
 
 @diary_command()
 def status(g):
+    """Show the status of the current session, if there is one."""
     if g.diary.has_current:
         start = g.diary.current.start
         duration = datetime.now() - start
@@ -345,8 +389,9 @@ def status(g):
 
 
 @diary_command()
-@click.option("-f", "--force", default=False, is_flag=True)
+@click.option("-f", "--force", default=False, is_flag=True, help="Start a new session even if one is already active.")
 def start(g, force):
+    """Start a new session with the current time."""
     if force and g.diary.has_current:
         g.diary.cancel()
     g.diary.start()
@@ -356,12 +401,14 @@ def start(g, force):
 @click.argument("comments")
 @click.option("-a", "--activity", type=ACTIVITY, default="coding")
 def stop(g, comments: str, activity: Diary.Entry.Activity):
+    """Stop and record the current session with the current time."""
     g.diary.stop(comments, activity=activity)
 
 
 @diary_command()
 @click.confirmation_option(prompt="Are you sure you want to cancel the current session?")
 def cancel(g):
+    """Stop the current session without recording it."""
     g.diary.cancel()
 
 
@@ -371,6 +418,7 @@ def cancel(g):
 @click.option("-s", "--stop", type=DATE_TIME, default=datetime.now())
 @click.option("-a", "--activity", type=ACTIVITY, default="coding")
 def entry(g, start: datetime, comments: str, stop: datetime, activity: Diary.Entry.Activity):
+    """Add an entry to the diary, ignoring the current session."""
     g.diary.add_entry(start, comments, stop, activity)
 
 
