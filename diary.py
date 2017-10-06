@@ -3,11 +3,12 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import datetime
+from dateutil.parser import parse as parse_datetime
 from functools import wraps
 from sqlalchemy import create_engine, Column, Integer, DateTime, String, Enum, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
-from typing import Iterable, Sequence, Mapping, Callable
+from typing import Iterable, Sequence, Mapping, Callable, Any
 import click
 import enum
 
@@ -30,6 +31,36 @@ class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__dict__ = self
+
+
+class DateTimeParamType(click.ParamType):
+    name = "datetime"
+
+    def convert(self, value, param, ctx):
+        if value is None or isinstance(value, datetime):
+            return value
+        try:
+            return parse_datetime(value)
+        except ValueError as e:
+            self.fail("Unknown date format '{}'".format(value))
+
+
+DATE_TIME = DateTimeParamType()
+
+
+class MappedParamType(click.ParamType):
+    def __init__(self, mapping: Mapping[str, Any]):
+        self.mapping = mapping
+
+    def convert(self, value, param, ctx):
+        if not isinstance(value, str):
+            return value
+        try:
+            return self.mapping[value]
+        except KeyError:
+            self.fail("Must be one of {}.".format(", ".join(
+                "'{}'".format(key) for key in self.mapping.keys()
+            )))
 
 
 # Model
@@ -230,7 +261,7 @@ class MarkdownEntryFormatter(EntryFormatter):
         return "| {} |".format(string) if self.pretty else string
 
 
-# Commands
+# Command setup
 
 @click.group(invoke_without_command=True)
 @click.pass_context
@@ -243,14 +274,14 @@ def diary(ctx, database: str, debug: bool, quiet: bool):
     g.quiet = quiet
 
     # Connect to DB
-    g.engine = create_engine("sqlite:///{}".format(database), echo=debug)
+    g.engine = create_engine("sqlite:///{}".format(database), echo=g.debug)
     # Init DB
     Diary.Base.metadata.create_all(g.engine)
     # Create model
     g.session = Session(bind=g.engine)
     g.diary = Diary(g.session)
 
-    if ctx.invoked_subcommand is None:
+    if not g.quiet and ctx.invoked_subcommand is None:
         ctx.invoke(show)
         click.echo()
         ctx.invoke(status)
@@ -277,20 +308,26 @@ def close_database(ctx, result, *args, **kwargs):
     ctx.obj["engine"].dispose()
 
 
-formatters = {
+# Custom Types
+
+FORMATTER = MappedParamType({
     "basic": BasicEntryFormatter(),
     "markdown": MarkdownEntryFormatter(),
     "markdown-basic": MarkdownEntryFormatter(pretty=False)
-}
+})
 
+ACTIVITY = MappedParamType({
+    activity.name.lower(): activity for activity in Diary.Entry.Activity
+})
+
+
+# Commands
 
 @diary_command()
-@click.option("-f", "--format", type=click.Choice(formatters), default="markdown")
-def show(g, format: str):
-    formatter = formatters[format]
-
+@click.option("-f", "--format", type=FORMATTER, default="markdown")
+def show(g, format: EntryFormatter):
     if g.diary.entries.count():
-        click.echo(formatter.format(g.diary.entries))
+        click.echo(format.format(g.diary.entries))
     else:
         click.echo("No entries")
 
@@ -308,14 +345,18 @@ def status(g):
 
 
 @diary_command()
-def start(g):
+@click.option("-f", "--force", default=False, is_flag=True)
+def start(g, force):
+    if force and g.diary.has_current:
+        g.diary.cancel()
     g.diary.start()
 
 
 @diary_command()
 @click.argument("comments")
-def stop(g, comments: str):
-    g.diary.stop(comments)
+@click.option("-a", "--activity", type=ACTIVITY, default="coding")
+def stop(g, comments: str, activity: Diary.Entry.Activity):
+    g.diary.stop(comments, activity=activity)
 
 
 @diary_command()
@@ -325,9 +366,12 @@ def cancel(g):
 
 
 @diary_command()
-def entry(g):
-    # TODO
-    click.echo("TODO")
+@click.argument("start", type=DATE_TIME)
+@click.argument("comments")
+@click.option("-s", "--stop", type=DATE_TIME, default=datetime.now())
+@click.option("-a", "--activity", type=ACTIVITY, default="coding")
+def entry(g, start: datetime, comments: str, stop: datetime, activity: Diary.Entry.Activity):
+    g.diary.add_entry(start, comments, stop, activity)
 
 
 if __name__ == "__main__":
