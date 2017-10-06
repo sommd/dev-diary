@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 
-import click
-import inspect
-from sqlalchemy import create_engine, Column, Integer, DateTime, String, Enum as SqlEnum, UniqueConstraint, CheckConstraint
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from datetime import datetime
+from functools import wraps
+from sqlalchemy import create_engine, Column, Integer, DateTime, String, Enum, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
-from enum import Enum
-from datetime import datetime
-from contextlib import contextmanager
-from functools import wraps
-from abc import ABC, abstractmethod
+from typing import Iterable, Sequence, Mapping, Callable
+import click
+import enum
 
+
+# Utils
 
 def auto_repr(*attrs):
     def __repr__(self):
@@ -23,11 +25,13 @@ def auto_repr(*attrs):
     return __repr__
 
 
+# Model
+
 class Diary:
     Base = declarative_base()
 
     class Entry(Base):
-        class Activity(Enum):
+        class Activity(enum.Enum):
             CODING = "Coding"
             DEBUGGING = "Debugging"
 
@@ -36,7 +40,7 @@ class Diary:
         id = Column(Integer, primary_key=True)
         start = Column(DateTime, nullable=False)
         stop = Column(DateTime, nullable=False, default=datetime.now)
-        activity = Column(SqlEnum(Activity), nullable=False, default=Activity.CODING)
+        activity = Column(Enum(Activity), nullable=False, default=Activity.CODING)
         comments = Column(String, nullable=False)
 
         __repr__ = auto_repr("id", "start", "stop", "activity", "comments")
@@ -114,6 +118,106 @@ class Diary:
             return entry
 
 
+# Formatters
+
+class EntryFormatter(ABC):
+    _default_fields = {
+        "Date": lambda e: e.start.strftime("%Y-%m-%d"),
+        "Start": lambda e: e.start.strftime("%H:%M"),
+        "Stop": lambda e: e.stop.strftime("%H:%M"),
+        "Activity": lambda e: e.activity.value,
+        "Comments": lambda e: e.comments
+    }
+
+    def __init__(self, header=True, trailer=True, fields: Mapping[str, Callable[[Diary.Entry], str]] = _default_fields):
+        self.use_header = header
+        self.use_trailer = trailer
+        self.fields = fields
+
+    def format(self, entries: Iterable[Diary.Entry]) -> str:
+        return "{}{}{}".format(
+            self.header if self.use_header else "",
+            self.separator.join(self.format_entry(entry) for entry in entries),
+            self.trailer if self.use_trailer else ""
+        )
+
+    @property
+    def header(self) -> str:
+        return ""
+
+    @property
+    def separator(self) -> str:
+        return "\n"
+
+    @property
+    def trailer(self) -> str:
+        return ""
+
+    @abstractmethod
+    def format_entry(self, entry: Diary.Entry) -> str:
+        raise NotImplementedError()
+
+
+class BasicEntryFormatter(EntryFormatter):
+    def format_entry(self, entry: Diary.Entry) -> str:
+        return ", ".join("{}={}".format(name, field(entry)) for name, field in self.fields.items())
+
+
+class MarkdownEntryFormatter(EntryFormatter):
+    def __init__(self, *args, pretty=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pretty = pretty
+
+    def format(self, entries, header=True, trailer=True):
+        widths = self._calculate_field_widths(entries) if self.pretty else None
+
+        # Header
+        string = self.get_header(widths) if header else ""
+        # Entries
+        string += self.separator.join(self.format_entry(entry, widths) for entry in entries)
+        # Trailer
+        if trailer:
+            string += self.trailer
+
+        return string
+
+    def _calculate_field_widths(self, entries):
+        widths = [len(field) for field in self.fields]
+
+        # Calculate max width of each item
+        for entry in entries:
+            for i, field in enumerate(self.fields.values()):
+                widths[i] = max(widths[i], len(field(entry)))
+
+        return widths
+
+    def get_header(self, widths: Sequence = None) -> str:
+        if widths is not None:
+            # Left justify if given widths
+            titles = (field.ljust(width) for field, width in zip(self.fields, widths))
+            dividers = ("-" * width for width in widths)
+        else:
+            titles = self.fields
+            dividers = ("---" for i in range(len(self.fields)))
+
+        fmt = "| {} |\n| {} |\n" if self.pretty else "{}\n{}\n"
+        return fmt.format(" | ".join(titles), " | ".join(dividers))
+
+    header = property(get_header)
+
+    def format_entry(self, entry: Diary.Entry, widths: Sequence = None) -> str:
+        fields = (field(entry) for field in self.fields.values())
+
+        if widths is not None:
+            # Left justify if given widths
+            fields = (field.ljust(width) for field, width in zip(fields, widths))
+
+        string = " | ".join(fields)
+        return "| {} |".format(string) if self.pretty else string
+
+
+# Commands
+
 @click.group(invoke_without_command=True)
 @click.pass_context
 @click.option("--database", type=click.Path(dir_okay=False), default="diary.db")
@@ -155,12 +259,21 @@ def close_database(ctx, result, *args, **kwargs):
     ctx.obj["engine"].dispose()
 
 
+formatters = {
+    "basic": BasicEntryFormatter(),
+    "markdown": MarkdownEntryFormatter(),
+    "markdown-basic": MarkdownEntryFormatter(pretty=False)
+}
+
+
 @diary.command()
+@click.option("-f", "--format", type=click.Choice(formatters), default="markdown")
 @with_diary
-def show(diary: Diary):
+def show(diary: Diary, format: str):
+    formatter = formatters[format]
+
     if diary.entries.count():
-        for entry in diary.entries:
-            click.echo(entry)
+        click.echo(formatter.format(diary.entries))
     else:
         click.echo("No entries")
 
