@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from dateutil.parser import parse as parse_datetime
 from functools import wraps
-from sqlalchemy import create_engine, Column, Integer, DateTime, String, Enum, UniqueConstraint, CheckConstraint
+from sqlalchemy import create_engine, func, Column, Integer, DateTime, String, Enum, UniqueConstraint, CheckConstraint
 from sqlalchemy.engine import Connectable
 from sqlalchemy.pool import NullPool
 from sqlalchemy.orm.session import Session
@@ -157,7 +157,7 @@ class Diary:
     @property
     def entries(self) -> Entry:
         with self.session(False) as session:
-            return session.query(self.Entry).order_by(self.Entry.start)
+            return session.query(self.Entry)
 
     @property
     def current(self) -> Current:
@@ -367,6 +367,28 @@ def close_database(ctx, result, *args, **kwargs):
 
 # Custom Types
 
+class EntryParamType(click.types.IntParamType):
+    name = "id"
+
+    def get_metavar(self, param):
+        return "[last|recent|INTEGER]"
+
+    def convert(self, value, param, ctx):
+        query = ctx.obj.diary.entries
+
+        if value.lower() == "last":
+            query = query.order_by(Diary.Entry.id.desc())
+        elif value.lower() == "recent":
+            query = query.order_by(Diary.Entry.stop.desc())
+        else:
+            id = super().convert(value, param, ctx)
+            query = query.filter(Diary.Entry.id == id)
+
+        return query.first()
+
+
+ENTRY = EntryParamType()
+
 FORMATTER = MappedParamType({
     "basic": BasicEntryFormatter(),
     "markdown": MarkdownEntryFormatter(),
@@ -385,7 +407,7 @@ ACTIVITY = MappedParamType({
 def show(g, format: EntryFormatter):
     """Show entries in the diary."""
     if g.diary.entries.count():
-        click.echo(format.format(g.diary.entries))
+        click.echo(format.format(g.diary.entries.order_by(Diary.Entry.start)))
     else:
         click.echo("No entries")
 
@@ -477,6 +499,31 @@ def merge(g, other: str):
 
     if not g.quiet:
         click.echo("Added {} entries.".format(count))
+
+
+@diary_command()
+@click.argument("entry", type=ENTRY, default="last")
+@click.option("-c", "--comments")
+@click.option("-a", "--activity", type=ACTIVITY)
+@click.option("--start", type=DATE_TIME)
+@click.option("--stop", type=DATE_TIME)
+def edit(g, entry: Diary.Entry, comments: str, activity: Diary.Entry.Activity, start: datetime, stop: datetime):
+    """Edit a previous entry.
+
+    ENTRY can be an id, 'last' for the last added entry, or 'recent' for the most recent entry (by stop time).
+    """
+
+    with g.diary.session():
+        if comments is not None:
+            entry.comments = comments
+        if activity is not None:
+            entry.activity = activity
+        if start is not None:
+            entry.start = start
+        if stop is not None:
+            entry.stop = stop
+
+    _echo_entry(entry, "Edited entry: {}.")
 
 
 if __name__ == "__main__":

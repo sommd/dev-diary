@@ -38,6 +38,7 @@ Options:
 
 Commands:
   cancel  Stop the current session without recording it.
+  edit    Edit a previous entry.
   entry   Add an entry to the diary, ignoring the current session.
   merge   Add all the entries of another diary into this one.
   show    Show entries in the diary.
