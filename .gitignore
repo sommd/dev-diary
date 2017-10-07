@@ -1,0 +1,6 @@
+/.env/
+__pycache__/
+*.egg-info/
+
+# Ignore for testing
+diary.db

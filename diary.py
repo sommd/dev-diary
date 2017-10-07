@@ -309,7 +309,7 @@ def diary(ctx, database: str, debug: bool, quiet: bool):
     """
 
     # Create g and populate with shared arguments
-    g = ctx.obj
+    g = ctx.obj = AttrDict()
     g.debug = debug
     g.quiet = quiet
 
@@ -443,4 +443,4 @@ def entry(g, start: datetime, comments: str, stop: datetime, activity: Diary.Ent
 
 
 if __name__ == "__main__":
-    diary(obj=AttrDict())
+    diary()
