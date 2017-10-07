@@ -389,20 +389,34 @@ def status(g):
 
 
 @diary_command()
+@click.argument("time", type=DATE_TIME, default=datetime.now())
 @click.option("-f", "--force", default=False, is_flag=True, help="Start a new session even if one is already active.")
-def start(g, force):
+def start(g, time: datetime, force: bool):
     """Start a new session with the current time."""
     if force and g.diary.has_current:
         g.diary.cancel()
-    g.diary.start()
+
+    current = g.diary.start(time)
+
+    if not g.quiet:
+        click.echo("Started new session at {}.".format(current.start.isoformat(" ")))
 
 
 @diary_command()
 @click.argument("comments")
+@click.argument("time", type=DATE_TIME, default=datetime.now())
 @click.option("-a", "--activity", type=ACTIVITY, default="coding")
-def stop(g, comments: str, activity: Diary.Entry.Activity):
+def stop(g, comments: str, time: datetime, activity: Diary.Entry.Activity):
     """Stop and record the current session with the current time."""
-    g.diary.stop(comments, activity=activity)
+    entry = g.diary.stop(comments, activity=activity, time=time)
+
+    if not g.quiet:
+        _echo_recorded_entry(entry)
+
+
+def _echo_recorded_entry(entry: Diary.Entry):
+    formatter = BasicEntryFormatter()
+    click.echo("Recorded session: {}.".format(formatter.format_entry(entry)))
 
 
 @diary_command()
@@ -410,6 +424,9 @@ def stop(g, comments: str, activity: Diary.Entry.Activity):
 def cancel(g):
     """Stop the current session without recording it."""
     g.diary.cancel()
+
+    if not g.quiet:
+        click.echo("Current session cancelled.")
 
 
 @diary_command()
@@ -419,7 +436,10 @@ def cancel(g):
 @click.option("-a", "--activity", type=ACTIVITY, default="coding")
 def entry(g, start: datetime, comments: str, stop: datetime, activity: Diary.Entry.Activity):
     """Add an entry to the diary, ignoring the current session."""
-    g.diary.add_entry(start, comments, stop, activity)
+    entry = g.diary.add_entry(start, comments, stop, activity)
+
+    if not g.quiet:
+        _echo_recorded_entry(entry)
 
 
 if __name__ == "__main__":
