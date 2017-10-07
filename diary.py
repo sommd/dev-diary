@@ -6,6 +6,8 @@ from datetime import datetime
 from dateutil.parser import parse as parse_datetime
 from functools import wraps
 from sqlalchemy import create_engine, Column, Integer, DateTime, String, Enum, UniqueConstraint, CheckConstraint
+from sqlalchemy.engine import Connectable
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
 from typing import Iterable, Sequence, Mapping, Callable, Any
@@ -119,8 +121,27 @@ class Diary:
         def __str__(self):
             return str(self.value)
 
+    @classmethod
+    def from_path(cls, path: str, init=True, *args, **kwargs):
+        # Create engine with no connection pooling so it automatically closes
+        engine = create_engine(path, poolclass=NullPool, *args, **kwargs)
+
+        if init:
+            cls.init(engine)
+
+        session = Session(bind=engine)
+        return cls(session)
+
+    @classmethod
+    def init(cls, bind: Connectable):
+        """Create all tables for a diary in the given `bind`."""
+        cls.Base.metadata.create_all(bind)
+
     def __init__(self, session: Session):
         self._session = session
+
+    def close(self):
+        self._session.close()
 
     @contextmanager
     def session(self, commit=True):
@@ -313,13 +334,8 @@ def diary(ctx, database: str, debug: bool, quiet: bool):
     g.debug = debug
     g.quiet = quiet
 
-    # Connect to DB
-    g.engine = create_engine("sqlite:///{}".format(database), echo=g.debug)
-    # Init DB
-    Diary.Base.metadata.create_all(g.engine)
-    # Create model
-    g.session = Session(bind=g.engine)
-    g.diary = Diary(g.session)
+    # Open diary
+    g.diary = Diary.from_path("sqlite:///{}".format(database), echo=g.debug)
 
     if not g.quiet and ctx.invoked_subcommand is None:
         ctx.invoke(show)
@@ -346,8 +362,7 @@ def diary_command(*args, **kwargs):
 @click.pass_context
 def close_database(ctx, result, *args, **kwargs):
     """Close connection to database when done."""
-    ctx.obj["session"].close()
-    ctx.obj["engine"].dispose()
+    ctx.obj.diary.close()
 
 
 # Custom Types
@@ -411,12 +426,16 @@ def stop(g, comments: str, time: datetime, activity: Diary.Entry.Activity):
     entry = g.diary.stop(comments, activity=activity, time=time)
 
     if not g.quiet:
-        _echo_recorded_entry(entry)
+        _echo_entry(entry, "Recorded session: {}.")
 
 
-def _echo_recorded_entry(entry: Diary.Entry):
-    formatter = BasicEntryFormatter()
-    click.echo("Recorded session: {}.".format(formatter.format_entry(entry)))
+def _echo_entry(entry: Diary.Entry, fmt: str = "{}"):
+    # Lazily create EntryFormatter
+    if not hasattr(_echo_entry, "formatter"):
+        _echo_entry.formatter = BasicEntryFormatter()
+    formatter = _echo_entry.formatter
+
+    click.echo(fmt.format(formatter.format_entry(entry)))
 
 
 @diary_command()
@@ -439,7 +458,25 @@ def entry(g, start: datetime, comments: str, stop: datetime, activity: Diary.Ent
     entry = g.diary.add_entry(start, comments, stop, activity)
 
     if not g.quiet:
-        _echo_recorded_entry(entry)
+        _echo_entry(entry, "Added entry: {}.")
+
+
+@diary_command()
+@click.argument("other", type=click.Path(exists=True, dir_okay=False))
+def merge(g, other: str):
+    """Add all the entries of another diary into this one."""
+    other = Diary.from_path("sqlite:///{}".format(other), False, echo=g.debug)
+
+    count = 0
+    for entry in other.entries:
+        g.diary.add_entry(entry.start, entry.comments, entry.stop, entry.activity)
+
+        if not g.quiet:
+            _echo_entry(entry, "Added entry: {}.")
+            count += 1
+
+    if not g.quiet:
+        click.echo("Added {} entries.".format(count))
 
 
 if __name__ == "__main__":

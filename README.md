@@ -39,6 +39,7 @@ Options:
 Commands:
   cancel  Stop the current session without recording it.
   entry   Add an entry to the diary, ignoring the current session.
+  merge   Add all the entries of another diary into this one.
   show    Show entries in the diary.
   start   Start a new session with the current time.
   status  Show the status of the current session, if there is one.
