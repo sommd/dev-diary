@@ -8,13 +8,13 @@ A small (one file) command line tool for keeping a developer diary. Made for UNS
 
 ```sh
 git clone https://github.com/sommd/dev-diary.git &&
-pip install dev-diary
+pip install ./dev-diary
 ```
 
 ### Single File
 
 ```sh
-curl -O diary.py 'https://raw.githubusercontent.com/sommd/dev-diary/master/diary.py' &&
+curl -o diary.py 'https://raw.githubusercontent.com/sommd/dev-diary/master/diary.py' &&
 chmod +x diary.py &&
 pip install click sqlalchemy python-dateutil
 ```
