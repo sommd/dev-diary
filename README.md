@@ -37,12 +37,12 @@ Options:
   --help           Show this message and exit.
 
 Commands:
-  cancel  Stop the current session without recording...
-  entry   Add an entry to the diary, ignoring the...
+  cancel  Stop the current session without recording it.
+  entry   Add an entry to the diary, ignoring the current session.
   show    Show entries in the diary.
   start   Start a new session with the current time.
-  status  Show the status of the current session, if...
-  stop    Stop and record the current session with the...
+  status  Show the status of the current session, if there is one.
+  stop    Stop and record the current session with the current time.
 ```
 
 ### Example
