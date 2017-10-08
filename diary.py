@@ -122,7 +122,7 @@ class Diary:
             return str(self.value)
 
     @classmethod
-    def from_path(cls, path: str, init=True, *args, **kwargs):
+    def from_uri(cls, path: str, init=True, *args, **kwargs):
         # Create engine with no connection pooling so it automatically closes
         engine = create_engine(path, poolclass=NullPool, *args, **kwargs)
 
@@ -335,7 +335,7 @@ def diary(ctx, database: str, debug: bool, quiet: bool):
     g.quiet = quiet
 
     # Open diary
-    g.diary = Diary.from_path("sqlite:///{}".format(database), echo=g.debug)
+    g.diary = Diary.from_uri("sqlite:///{}".format(database), echo=g.debug)
 
     if not g.quiet and ctx.invoked_subcommand is None:
         ctx.invoke(show)
@@ -508,7 +508,7 @@ def entry(g, start: datetime, comments: str, stop: datetime, activity: Diary.Ent
 @click.argument("other", type=click.Path(exists=True, dir_okay=False))
 def merge(g, other: str):
     """Add all the entries of another diary into this one."""
-    other = Diary.from_path("sqlite:///{}".format(other), False, echo=g.debug)
+    other = Diary.from_uri("sqlite:///{}".format(other), False, echo=g.debug)
 
     count = 0
     for entry in other.entries:
