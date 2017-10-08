@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime
 from dateutil.parser import parse as parse_datetime
@@ -213,13 +214,13 @@ class Diary:
 class EntryFormatter(ABC):
     """ABC interface for formating an `Entry` into a `str` to be output."""
 
-    _default_fields = {
-        "Date": lambda e: e.start.strftime("%Y-%m-%d"),
-        "Start": lambda e: e.start.strftime("%H:%M"),
-        "Stop": lambda e: e.stop.strftime("%H:%M"),
-        "Activity": lambda e: e.activity.value,
-        "Comments": lambda e: e.comments
-    }
+    _default_fields = OrderedDict((
+        ("Date", lambda e: e.start.strftime("%Y-%m-%d")),
+        ("Start", lambda e: e.start.strftime("%H:%M")),
+        ("Stop", lambda e: e.stop.strftime("%H:%M")),
+        ("Activity", lambda e: e.activity.value),
+        ("Comments", lambda e: e.comments)
+    ))
 
     def __init__(self, header=True, trailer=True, fields: Mapping[str, Callable[[Diary.Entry], str]] = _default_fields):
         self.use_header = header
