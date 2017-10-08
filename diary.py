@@ -10,7 +10,7 @@ from sqlalchemy.engine import Connectable
 from sqlalchemy.pool import NullPool
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
-from typing import Iterable, Sequence, Mapping, Callable, Any
+from typing import Iterable, Sequence, Mapping, Callable, Any, Tuple
 import click
 import enum
 
@@ -390,23 +390,44 @@ class EntryParamType(click.types.IntParamType):
 ENTRY = EntryParamType()
 
 FORMATTER = MappedParamType({
-    "basic": BasicEntryFormatter(),
-    "markdown": MarkdownEntryFormatter(),
-    "markdown-basic": MarkdownEntryFormatter(pretty=False)
+    "basic": BasicEntryFormatter,
+    "markdown": MarkdownEntryFormatter,
+    "markdown-basic": lambda *args, **kwargs: MarkdownEntryFormatter(*args, pretty=False, **kwargs)
 })
 
 ACTIVITY = MappedParamType({
     activity.name.lower(): activity for activity in Diary.Entry.Activity
 })
 
+FIELD = MappedParamType({
+    "id": ("ID", lambda e: str(e.id)),
+    "date": ("Date", lambda e: e.start.strftime("%Y-%m-%d")),
+    "start": ("Start", lambda e: e.start.strftime("%Y-%m-%d %H:%M")),
+    "starttime": ("Start", lambda e: e.start.strftime("%H:%M")),
+    "stop": ("Stop", lambda e: e.stop.strftime("%Y-%m-%d %H:%M")),
+    "stoptime": ("Stop", lambda e: e.stop.strftime("%H:%M")),
+    "activity": ("Activity", lambda e: e.activity.value),
+    "comments": ("Comments", lambda e: e.comments)
+})
 
 # Commands
 
+
 @diary_command()
+@click.argument("fields", type=FIELD, nargs=-1)
 @click.option("-f", "--format", type=FORMATTER, default="markdown")
-def show(g, format: EntryFormatter):
-    """Show entries in the diary."""
+def show(g, fields: Sequence[Tuple[str, Callable]], format: EntryFormatter):
+    """Show entries in the diary.
+
+    Different output formats can be specified with -f/--format. Output fields can be specified with FIELDS, options are:
+    id, date, start, starttime, stop, stoptime, activity and comments.
+    """
+
     if g.diary.entries.count():
+        if fields:
+            format = format(fields=dict(fields))
+        else:
+            format = format()
         click.echo(format.format(g.diary.entries.order_by(Diary.Entry.start)))
     else:
         click.echo("No entries")
