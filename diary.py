@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from dateutil.parser import parse as parse_datetime
 from functools import wraps
+from io import StringIO
 from sqlalchemy import create_engine, func, Column, Integer, DateTime, String, Enum, UniqueConstraint, CheckConstraint
 from sqlalchemy.engine import Connectable
 from sqlalchemy.pool import NullPool
@@ -12,6 +13,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
 from typing import Iterable, Sequence, Mapping, Callable, Any, Tuple
 import click
+import csv
 import enum
 
 
@@ -315,6 +317,29 @@ class MarkdownEntryFormatter(EntryFormatter):
         return "| {} |".format(string) if self.pretty else string
 
 
+class CsvEntryFormatter(EntryFormatter):
+    def __init__(self, dialect: str = 'excel', *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._strio = StringIO(newline='')
+        self._writer = csv.writer(self._strio, dialect=dialect, lineterminator='')
+
+    def _format_row(self, row: Iterable[str]):
+        # Clear buffer
+        self._strio.seek(0)
+        self._strio.truncate()
+        # Write
+        self._writer.writerow(row)
+        # Return
+        return self._strio.getvalue()
+
+    @property
+    def header(self) -> str:
+        return self._format_row(self.fields.keys()) + "\n"
+
+    def format_entry(self, entry: Diary.Entry) -> str:
+        return self._format_row(field(entry) for field in self.fields.values())
+
+
 # Command setup
 
 @click.group(invoke_without_command=True)
@@ -392,7 +417,10 @@ ENTRY = EntryParamType()
 FORMATTER = MappedParamType({
     "basic": BasicEntryFormatter,
     "markdown": MarkdownEntryFormatter,
-    "markdown-basic": lambda *args, **kwargs: MarkdownEntryFormatter(*args, pretty=False, **kwargs)
+    "markdown-basic": lambda *args, **kwargs: MarkdownEntryFormatter(*args, pretty=False, **kwargs),
+    "csv": CsvEntryFormatter,
+    "csv-tab": lambda *args, **kwargs: CsvEntryFormatter(dialect='excel-tab'),
+    "csv-unix": lambda *args, **kwargs: CsvEntryFormatter(dialect='unix')
 })
 
 ACTIVITY = MappedParamType({
