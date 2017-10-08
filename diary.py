@@ -415,11 +415,11 @@ FIELD = MappedParamType({
 
 @diary_command()
 @click.argument("fields", type=FIELD, nargs=-1)
-@click.option("-f", "--format", type=FORMATTER, default="markdown")
+@click.option("-f", "--format", type=FORMATTER, default="markdown", help="Format to output in.")
 def show(g, fields: Sequence[Tuple[str, Callable]], format: EntryFormatter):
     """Show entries in the diary.
 
-    Different output formats can be specified with -f/--format. Output fields can be specified with FIELDS, options are:
+    Output fields can be specified with FIELDS, options are:
     id, date, start, starttime, stop, stoptime, activity and comments.
     """
 
@@ -450,7 +450,7 @@ def status(g):
 @click.argument("time", type=DATE_TIME, default=datetime.now())
 @click.option("-f", "--force", default=False, is_flag=True, help="Start a new session even if one is already active.")
 def start(g, time: datetime, force: bool):
-    """Start a new session with the current time."""
+    """Start a new session with the current time, or the time specified."""
     if force and g.diary.has_current:
         g.diary.cancel()
 
@@ -465,7 +465,7 @@ def start(g, time: datetime, force: bool):
 @click.argument("time", type=DATE_TIME, default=datetime.now())
 @click.option("-a", "--activity", type=ACTIVITY, default="coding")
 def stop(g, comments: str, time: datetime, activity: Diary.Entry.Activity):
-    """Stop and record the current session with the current time."""
+    """Stop and record the current session with the current time, or the time specified."""
     entry = g.diary.stop(comments, activity=activity, time=time)
 
     if not g.quiet:
@@ -531,7 +531,8 @@ def merge(g, other: str):
 def edit(g, entry: Diary.Entry, comments: str, activity: Diary.Entry.Activity, start: datetime, stop: datetime):
     """Edit a previous entry.
 
-    ENTRY can be an id, 'last' for the last added entry, or 'recent' for the most recent entry (by stop time).
+    ENTRY can be an id, 'last' for the last added entry, or 'recent' for the most recent entry (by stop time). By
+    default it is 'last'.
     """
 
     with g.diary.session():
