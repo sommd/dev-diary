@@ -34,6 +34,7 @@ Options:
   --database PATH  The SQLite database file to use.
   --debug
   -q, --quiet
+  --commit         Git commit the database afterwards.
   --help           Show this message and exit.
 
 Commands:

@@ -361,7 +361,7 @@ class CsvEntryFormatter(EntryFormatter):
               help="The SQLite database file to use.")
 @click.option("--debug", default=False, is_flag=True)
 @click.option("-q", "--quiet", default=False, is_flag=True)
-@click.option("--commit", default=False, is_flag=True)
+@click.option("--commit", default=False, is_flag=True, help="Git commit the database afterwards.")
 def diary(ctx, database: str, debug: bool, quiet: bool, commit: bool):
     """Keep track of development time and tasks completed.
 
