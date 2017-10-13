@@ -461,7 +461,7 @@ def show(g, fields: Sequence[Tuple[str, Callable]], format: EntryFormatter):
     """Show entries in the diary.
 
     Output fields can be specified with FIELDS, options are:
-    id, date, start, starttime, stop, stoptime, activity and comments.
+    id, date, start, starttime, stop, stoptime, activity, comments and shortcomments.
     """
 
     if g.diary.entries.count():
