@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='dev-diary',
-    version='0.1.0',
+    version='0.2.0',
     author='sommd',
     description='A small (one file) command line tool for keeping a developer diary.',
     license='MIT',
