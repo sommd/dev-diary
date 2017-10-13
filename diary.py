@@ -33,6 +33,14 @@ def auto_repr(*attrs):
     return __repr__
 
 
+def truncate(string: str, limit: int = 50, ellipsis: str = "..."):
+    """Truncate a string if its longer than `limit` and append `ellipsis`."""
+    if len(string) <= limit:
+        return string
+    else:
+        return string[:limit] + ellipsis
+
+
 # https://stackoverflow.com/a/14620633
 class AttrDict(dict):
     """Extension of dict that `set`/`get`/`del` as attributes."""
@@ -219,7 +227,7 @@ class EntryFormatter(ABC):
         ("Start", lambda e: e.start.strftime("%H:%M")),
         ("Stop", lambda e: e.stop.strftime("%H:%M")),
         ("Activity", lambda e: e.activity.value),
-        ("Comments", lambda e: e.comments)
+        ("Comments", lambda e: truncate(e.comments))
     ))
 
     def __init__(self, header=True, trailer=True, fields: Mapping[str, Callable[[Diary.Entry], str]] = _default_fields):
@@ -436,7 +444,8 @@ FIELD = MappedParamType({
     "stop": ("Stop", lambda e: e.stop.strftime("%Y-%m-%d %H:%M")),
     "stoptime": ("Stop", lambda e: e.stop.strftime("%H:%M")),
     "activity": ("Activity", lambda e: e.activity.value),
-    "comments": ("Comments", lambda e: e.comments)
+    "comments": ("Comments", lambda e: e.comments),
+    "shortcomments": ("Comments", lambda e: truncate(e.comments)),
 })
 
 # Commands
