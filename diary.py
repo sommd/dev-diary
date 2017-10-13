@@ -13,9 +13,12 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
 from typing import Iterable, Sequence, Mapping, Callable, Any, Tuple
+from urllib.request import urlopen
 import click
 import csv
 import enum
+import os
+import sys
 
 
 # Utils
@@ -584,6 +587,26 @@ def edit(g, entry: Diary.Entry, comments: str, activity: Diary.Entry.Activity, s
             entry.stop = stop
 
     _echo_entry(entry, "Edited entry: {}.")
+
+
+@diary_command()
+@click.option("-f", "--file", type=click.Path(writable=True), default=sys.argv[0])
+@click.option("--url", default="https://raw.githubusercontent.com/sommd/dev-diary/master/diary.py")
+def update(g, file: str, url: str):
+    if os.path.exists(file):
+        click.confirm("Are you sure you want to overwrite '{}'".format(file), abort=True)
+
+    # Download update
+    click.echo("Download update...")
+    with urlopen(url) as response:
+        update = response.read()
+
+    # Update program
+    click.echo("Updating...")
+    with open(file, "wb") as program:
+        program.write(update)
+
+    click.echo("Done")
 
 
 if __name__ == "__main__":
