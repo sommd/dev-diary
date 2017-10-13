@@ -19,6 +19,7 @@ import csv
 import enum
 import os
 import sys
+import subprocess
 
 
 # Utils
@@ -360,7 +361,8 @@ class CsvEntryFormatter(EntryFormatter):
               help="The SQLite database file to use.")
 @click.option("--debug", default=False, is_flag=True)
 @click.option("-q", "--quiet", default=False, is_flag=True)
-def diary(ctx, database: str, debug: bool, quiet: bool):
+@click.option("--commit", default=False, is_flag=True)
+def diary(ctx, database: str, debug: bool, quiet: bool, commit: bool):
     """Keep track of development time and tasks completed.
 
     Diary is kept track of using an SQLite database, 'diary.db' by default.
@@ -370,6 +372,8 @@ def diary(ctx, database: str, debug: bool, quiet: bool):
     g = ctx.obj = AttrDict()
     g.debug = debug
     g.quiet = quiet
+    g.commit = commit
+    g.diary_file = database
 
     # Open diary
     g.diary = Diary.from_uri("sqlite:///{}".format(database), echo=g.debug)
@@ -400,6 +404,22 @@ def diary_command(*args, **kwargs):
 def close_database(ctx, result, *args, **kwargs):
     """Close connection to database when done."""
     ctx.obj.diary.close()
+
+
+@diary.resultcallback()
+@click.pass_context
+def commit(ctx, result, *args, **kwargs):
+    """Commit the diary to Git if --commit was supplied."""
+    g = ctx.obj
+    
+    if g.commit:
+        # Redirect to /dev/null if quiet
+        output = os.devnull if g.quiet else None
+        # Commit the diary file
+        code = subprocess.call(["git", "commit", "-m", "Update diary", g.diary_file], stdout=output)
+        #
+        if code:
+            sys.exit(code)
 
 
 # Custom Types
