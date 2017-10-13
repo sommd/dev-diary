@@ -45,6 +45,7 @@ Commands:
   start   Start a new session with the current time.
   status  Show the status of the current session, if there is one.
   stop    Stop and record the current session with the current time.
+  update  Download the latest version of diary.py and update.
 ```
 
 ### Example

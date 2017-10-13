@@ -590,9 +590,12 @@ def edit(g, entry: Diary.Entry, comments: str, activity: Diary.Entry.Activity, s
 
 
 @diary_command()
-@click.option("-f", "--file", type=click.Path(writable=True), default=sys.argv[0])
-@click.option("--url", default="https://raw.githubusercontent.com/sommd/dev-diary/master/diary.py")
+@click.option("-f", "--file", type=click.Path(writable=True), default=sys.argv[0],
+              help="The file to save the update to. The default is the script itself.")
+@click.option("--url", default="https://raw.githubusercontent.com/sommd/dev-diary/master/diary.py",
+              help="The URL to download the update from. The default is from the master branch of sommd/dev-diary.")
 def update(g, file: str, url: str):
+    """Download the latest version of diary.py and update."""
     if os.path.exists(file):
         click.confirm("Are you sure you want to overwrite '{}'".format(file), abort=True)
 
