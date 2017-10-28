@@ -486,7 +486,7 @@ def show(g, fields: Sequence[Tuple[str, Callable]], format: EntryFormatter):
 
     if g.diary.entries.count():
         if fields:
-            format = format(fields=dict(fields))
+            format = format(fields=OrderedDict(fields))
         else:
             format = format()
         click.echo(format.format(g.diary.entries.order_by(Diary.Entry.start)))
